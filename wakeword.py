@@ -4,10 +4,12 @@ from pvrecorder import PvRecorder
 import pvcobra
 from stt_faster_whisper import transcribe_bytes
 from llm_client_openrouter import stream_chat
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+ACCESS_KEY = os.getenv("PORCUPINE_ACCESS_KEY")
 
-
-ACCESS_KEY = "7JWaWoQHDmoUrZ+fc3hkB4mUlEh7bbWu9MZXl7NQndM8TURKdEQD0A=="
 DEVICE_INDEX = 0
 KEYWORD_FILE_PATH = "/home/colden/Projects/Assistant/pax-ton_en_raspberry-pi_v3_0_0.ppn"
 
