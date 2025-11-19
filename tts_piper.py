@@ -20,7 +20,8 @@ from pathlib import Path
 PIPER_BIN = shutil.which("piper") or "piper"
 MODEL_PATH = "/home/colden/Projects/Assistant/en_US-lessac-medium.onnx"
 CONFIG_PATH = os.environ.get("PIPER_CONFIG")
-APLAY_DEVICE = "hw:0,0"
+APLAY_DEVICE = "hw:CARD=sndrpihifiberry,DEV=0"
+
 
 if not MODEL_PATH:
     sys.exit("Set PIPER_MODEL=/path/to/voice.onnx")
