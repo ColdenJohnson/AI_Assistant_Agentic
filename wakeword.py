@@ -20,43 +20,61 @@ PREROLL_MS = 400
 
 
 class StreamingSpeaker:
-    """Background Piper wrapper that speaks queued chunks as soon as they arrive."""
+    """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
     def __init__(self):
-        from tts_piper import say as piper_say  # defer heavy import until needed
+        import tts_piper  # defer heavy dependency until first use
 
-        self._say = piper_say
-        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._tts = tts_piper
+        self._text_queue: queue.Queue[str | None] = queue.Queue()
+        self._pcm_queue: queue.Queue[bytes | None] = queue.Queue()
         self._stop = threading.Event()
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        self._synth_worker = threading.Thread(target=self._synth_loop, daemon=True)
+        self._play_worker = threading.Thread(target=self._play_loop, daemon=True)
+        self._synth_worker.start()
+        self._play_worker.start()
         atexit.register(self.close)
 
-    def _run(self):
-        while not self._stop.is_set():
-            text = self._queue.get()
+    def _synth_loop(self):
+        while True:
+            text = self._text_queue.get()
             if text is None:
-                self._queue.task_done()
+                self._text_queue.task_done()
+                self._pcm_queue.put(None)
                 break
             try:
-                self._say(text)
+                pcm = self._tts._synthesize_raw(text)
+                self._pcm_queue.put(pcm)
             finally:
-                self._queue.task_done()
+                self._text_queue.task_done()
+
+    def _play_loop(self):
+        while True:
+            pcm = self._pcm_queue.get()
+            if pcm is None:
+                self._pcm_queue.task_done()
+                break
+            try:
+                self._tts._play_pcm_resampled(pcm, self._tts.SRC_SR)
+            finally:
+                self._pcm_queue.task_done()
 
     def speak(self, text: str):
         cleaned = text.strip()
         if cleaned:
-            self._queue.put(cleaned)
+            self._text_queue.put(cleaned)
 
     def wait_until_idle(self):
-        self._queue.join()
+        self._text_queue.join()
+        self._pcm_queue.join()
 
     def close(self):
         if self._stop.is_set():
             return
         self._stop.set()
-        self._queue.put(None)
-        self._worker.join()
+        self._text_queue.put(None)
+        self._synth_worker.join()
+        self._play_worker.join()
 
 
 _speaker = StreamingSpeaker()
@@ -179,23 +197,44 @@ def handle_utterance(audio_bytes: bytes, sample_rate: int):
         _speaker.wait_until_idle()  # avoid overlapping with prior utterance
         resp: list[str] = []
         sentence: list[str] = []
+        started_stream = False
+        chunk_counter = 0
+        MIN_FIRST_CHARS = 6      # say first words quickly
+        MIN_CHARS = 80            # afterwards keep sentences longer
+        MAX_CHARS = 160           # hard stop to avoid huge chunks
 
         def flush_sentence(force: bool = False):
+            nonlocal started_stream, chunk_counter
             chunk = "".join(sentence).strip()
             if not chunk:
                 return
             if force or chunk[-1:] in (".", "!", "?",):
+                chunk_counter += 1
+                label = "first" if chunk_counter == 1 else "next"
+                print(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
                 _speaker.speak(chunk)
                 sentence.clear()
+                if chunk_counter == 1:
+                    started_stream = True
 
         for token in stream_chat(msgs, usage=False):
             print(token, end="", flush=True)
             resp.append(token)
             sentence.append(token)
-            if any(token.endswith(p) for p in (".", "!", "?", "\n")):
-                flush_sentence(force=True)
-            elif len("".join(sentence)) >= 80 and token.endswith(" "):
-                flush_sentence(force=True)
+            current_len = len("".join(sentence))
+            punct = any(token.endswith(p) for p in (".", "!", "?", "\n"))
+            whitespace = token.endswith(" ")
+
+            if not started_stream:
+                if punct or (whitespace and current_len >= MIN_FIRST_CHARS):
+                    flush_sentence(force=True)
+            else:
+                if punct and current_len >= MIN_FIRST_CHARS:
+                    flush_sentence(force=True)
+                elif whitespace and current_len >= MIN_CHARS:
+                    flush_sentence(force=True)
+                elif current_len >= MAX_CHARS:
+                    flush_sentence(force=True)
         print()
         flush_sentence(force=True)
         _speaker.wait_until_idle()
