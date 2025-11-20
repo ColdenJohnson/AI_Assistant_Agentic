@@ -19,6 +19,32 @@ TRAIL_SIL_FRAMES = 25     # ~0.8s at 16k/512
 PREROLL_MS = 400
 
 
+class PhaseTimer:
+    """Simple helper to log latency checkpoints in milliseconds."""
+
+    def __init__(self):
+        self._start_ts: float | None = None
+        self._last_ts: float | None = None
+        self._active = True
+
+    def checkpoint(self, label: str):
+        if not self._active:
+            return
+        now = time.perf_counter()
+        if self._start_ts is None:
+            self._start_ts = now
+            delta_ms = 0.0
+            total_ms = 0.0
+        else:
+            delta_ms = (now - self._last_ts) * 1000.0
+            total_ms = (now - self._start_ts) * 1000.0
+        self._last_ts = now
+        print(f"[LATENCY] {label}: +{delta_ms:.1f} ms (total {total_ms:.1f} ms)", flush=True)
+
+    def stop(self):
+        self._active = False
+
+
 class StreamingSpeaker:
     """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
@@ -116,6 +142,7 @@ def main(device_index: int | None = None):
 
     state = "IDLE"
     trailing_sil = 0
+    phase_timer: PhaseTimer | None = None
 
     def cleanup(*_):
         try:
@@ -147,6 +174,8 @@ def main(device_index: int | None = None):
             idx = porcupine.process(pcm)                  # -1 none; 0 => wakeword
             if idx == 0:
                 print("paxton detected, wake")
+                phase_timer = PhaseTimer()
+                phase_timer.checkpoint("Wake word detected")
                 utterance = bytearray().join(preroll) if preroll else bytearray()
                 trailing_sil = 0
                 state = "LISTENING"
@@ -160,11 +189,14 @@ def main(device_index: int | None = None):
                 if trailing_sil >= TRAIL_SIL_FRAMES:
                     print("end utterance")
                     audio_bytes = bytes(utterance)        # 16kHz, mono, 16-bit PCM
-                    handle_utterance(audio_bytes, sr)     # integrate STT here
+                    if phase_timer:
+                        phase_timer.checkpoint("Utterance captured, running STT")
+                    handle_utterance(audio_bytes, sr, phase_timer)     # integrate STT here
                     utterance.clear()
                     state = "IDLE"
+                    phase_timer = None
 
-def handle_utterance(audio_bytes: bytes, sample_rate: int):
+def handle_utterance(audio_bytes: bytes, sample_rate: int, phase_timer: PhaseTimer | None = None):
     text, meta = transcribe_bytes(
         audio_bytes,
         sample_rate_hz=sample_rate,
@@ -176,6 +208,8 @@ def handle_utterance(audio_bytes: bytes, sample_rate: int):
         word_timestamps=False,
     )
     print(f"STT: {text}")
+    if phase_timer:
+        phase_timer.checkpoint("STT transcription complete")
 
 
     # def handle_llm(text: str):
@@ -198,13 +232,15 @@ def handle_utterance(audio_bytes: bytes, sample_rate: int):
         resp: list[str] = []
         sentence: list[str] = []
         started_stream = False
+        first_chunk_logged = False
+        first_token_logged = False
         chunk_counter = 0
         MIN_FIRST_CHARS = 6      # say first words quickly
         MIN_CHARS = 80            # afterwards keep sentences longer
         MAX_CHARS = 160           # hard stop to avoid huge chunks
 
         def flush_sentence(force: bool = False):
-            nonlocal started_stream, chunk_counter
+            nonlocal started_stream, chunk_counter, first_chunk_logged
             chunk = "".join(sentence).strip()
             if not chunk:
                 return
@@ -213,12 +249,19 @@ def handle_utterance(audio_bytes: bytes, sample_rate: int):
                 label = "first" if chunk_counter == 1 else "next"
                 print(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
                 _speaker.speak(chunk)
+                if phase_timer and chunk_counter == 1 and not first_chunk_logged:
+                    phase_timer.checkpoint("First TTS chunk queued")
+                    phase_timer.stop()
+                    first_chunk_logged = True
                 sentence.clear()
                 if chunk_counter == 1:
                     started_stream = True
 
         for token in stream_chat(msgs, usage=False):
             print(token, end="", flush=True)
+            if phase_timer and not first_token_logged:
+                phase_timer.checkpoint("Received first LLM token")
+                first_token_logged = True
             resp.append(token)
             sentence.append(token)
             current_len = len("".join(sentence))
@@ -238,6 +281,8 @@ def handle_utterance(audio_bytes: bytes, sample_rate: int):
         print()
         flush_sentence(force=True)
         _speaker.wait_until_idle()
+        if phase_timer:
+            phase_timer.stop()
     
     handle_llm(text)
 
