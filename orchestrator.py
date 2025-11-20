@@ -7,6 +7,7 @@ import threading
 from llm_client_openrouter import stream_chat
 from stt_faster_whisper import transcribe_bytes
 from wake_listener import PhaseTimer, listen_for_utterances
+import tts_piper
 
 DEVICE_INDEX = 0
 
@@ -15,8 +16,6 @@ class StreamingSpeaker:
     """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
     def __init__(self):
-        import tts_piper  # defer heavy dependency until first use
-
         self._tts = tts_piper
         self._text_queue: queue.Queue[str | None] = queue.Queue()
         self._pcm_queue: queue.Queue[bytes | None] = queue.Queue()
@@ -77,6 +76,8 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         {"role": "system", "content": "You are a home assistant. Be concise."},
         {"role": "user", "content": text},
     ]
+
+
     _speaker.wait_until_idle()  # avoid overlapping with prior utterance
     resp: list[str] = []
     sentence: list[str] = []
@@ -84,8 +85,9 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     first_chunk_logged = False
     first_token_logged = False
     chunk_counter = 0
-    MIN_FIRST_CHARS = 6      # say first words quickly
-    MIN_CHARS = 80            # afterwards keep sentences longer
+    MIN_FIRST_CHARS = 1      # say first words quickly
+    MAX_FIRST_CHARS = 3
+    MIN_CHARS = 40            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
 
     def flush_sentence(force: bool = False):
@@ -118,7 +120,7 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         whitespace = token.endswith(" ")
 
         if not started_stream:
-            if punct or (whitespace and current_len >= MIN_FIRST_CHARS):
+            if punct or (whitespace and current_len >= MIN_FIRST_CHARS) or (whitespace and current_len >= MAX_FIRST_CHARS):
                 flush_sentence(force=True)
         else:
             if punct and current_len >= MIN_FIRST_CHARS:

@@ -67,8 +67,8 @@ def peak_dbfs(pcm):
 
 def output_dBFS(pcm, meter_every, n):
     lvl = peak_dbfs(pcm)
-    if n % meter_every == 0:
-        print(f"level ~ {lvl:5.1f} dBFS", flush=True)
+    # if n % meter_every == 0:
+    #     print(f"level ~ {lvl:5.1f} dBFS", flush=True)
 
 
 def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[bytes, int, PhaseTimer | None], None, None]:
