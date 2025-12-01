@@ -11,7 +11,6 @@ import tts_piper
 
 DEVICE_INDEX = 0
 
-
 class StreamingSpeaker:
     """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
@@ -86,7 +85,7 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     first_token_logged = False
     chunk_counter = 0
     MIN_FIRST_CHARS = 1      # say first words quickly
-    MAX_FIRST_CHARS = 3
+    MAX_FIRST_CHARS = 1
     MIN_CHARS = 40            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
 
@@ -95,15 +94,16 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         chunk = "".join(sentence).strip()
         if not chunk:
             return
-        if force or chunk[-1:] in (".", "!", "?",):
+        if force or chunk[-1:] in (".", "!", "?", "\n"):
             chunk_counter += 1
             label = "first" if chunk_counter == 1 else "next"
             print(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
             _speaker.speak(chunk)
-            if phase_timer and chunk_counter == 1 and not first_chunk_logged:
-                phase_timer.checkpoint("First TTS chunk queued")
-                phase_timer.stop()
-                first_chunk_logged = True
+            if phase_timer:
+                msg = "First TTS chunk queued" if chunk_counter == 1 and not first_chunk_logged else f"TTS chunk #{chunk_counter} queued"
+                phase_timer.checkpoint(msg)
+                if chunk_counter == 1:
+                    first_chunk_logged = True
             sentence.clear()
             if chunk_counter == 1:
                 started_stream = True
@@ -161,3 +161,4 @@ def main(device_index: int | None = None):
 
 if __name__ == "__main__":
     main(device_index=DEVICE_INDEX)
+
