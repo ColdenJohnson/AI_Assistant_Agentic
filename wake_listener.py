@@ -27,7 +27,6 @@ VAD_THRESH = 0.5                  # Cobra probability threshold
 CHUNK_SIL_FRAMES = 12             # ~0.38s of silence -> cut a chunk
 TRAIL_SIL_FRAMES = 40             # ~1.3s of silence -> end utterance ( +0.5s from old value)
 PREROLL_MS = 1
-TAIL_CLIP_MS = 1000               # drop trailing chunks up to this many ms (unless chunk itself exceeds it)
 
 
 class PhaseTimer:
@@ -118,9 +117,6 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 language="en",
                 beam_size=3,
                 temperature=0.0,
-                vad_filter=False,
-                condition_on_previous_text=False,
-                word_timestamps=False,
             )
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             idx += 1
@@ -190,25 +186,11 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                     print("end utterance")
                     if phase_timer:
                         phase_timer.checkpoint("Utterance captured, finalizing STT")
-                    if chunk_queue is not None and chunk_audio:
-                        chunk_queue.put(bytes(chunk_audio))
-                        chunk_audio.clear()
                     if chunk_queue is not None:
                         chunk_queue.put(None)
                         chunk_queue.join()
                     if chunk_worker is not None:
                         chunk_worker.join()
-                    clip_ms = TAIL_CLIP_MS
-                    while chunk_results and clip_ms > 0:
-                        last = chunk_results[-1]
-                        dur = last.get("duration_ms", 0.0) or 0.0
-                        if dur <= clip_ms:
-                            print("Pop trailing chunk of dur_ms =", dur)
-                            chunk_results.pop()
-                            clip_ms -= dur
-                        else:
-                            print("not popping, just breaking")
-                            break
                     text = " ".join(c["text"] for c in chunk_results).strip()
                     meta = {"chunks": chunk_results}
                     yield text, meta, phase_timer

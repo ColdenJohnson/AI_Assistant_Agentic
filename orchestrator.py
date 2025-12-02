@@ -3,9 +3,9 @@ from __future__ import annotations
 import atexit
 import queue
 import threading
+from typing import Any, Dict
 
 from llm_client_openrouter import stream_chat
-from stt_faster_whisper import transcribe_bytes
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
 
@@ -17,7 +17,7 @@ class StreamingSpeaker:
     def __init__(self):
         self._tts = tts_piper
         self._text_queue: queue.Queue[str | None] = queue.Queue()
-        self._pcm_queue: queue.Queue[bytes | None] = queue.Queue()
+        self._pcm_queue: queue.Queue[bytes | None] = queue.Queue() # pcm stands for pulse control modulation (audio)
         self._stop = threading.Event()
         self._synth_worker = threading.Thread(target=self._synth_loop, daemon=True)
         self._play_worker = threading.Thread(target=self._play_loop, daemon=True)
@@ -47,7 +47,7 @@ class StreamingSpeaker:
             try:
                 self._tts._play_pcm_resampled(pcm, self._tts.SRC_SR)
             finally:
-                self._pcm_queue.task_done()
+                self._pcm_queue.task_done() 
 
     def speak(self, text: str):
         cleaned = text.strip()
@@ -69,13 +69,14 @@ class StreamingSpeaker:
 
 _speaker = StreamingSpeaker()
 
-
+''' Sends the actual call to teh LLM and streams back the response'''
 def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     msgs = [
         {"role": "system", "content": "You are a home assistant. Be concise."},
         {"role": "user", "content": text},
     ]
 
+    phase_timer.checkpoint(f"Sending STT to LLM: {text!r}")
 
     _speaker.wait_until_idle()  # avoid overlapping with prior utterance
     resp: list[str] = []
@@ -136,29 +137,17 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         phase_timer.stop()
 
 
-def handle_utterance(audio_bytes: bytes, sample_rate: int, phase_timer: PhaseTimer | None = None):
-    text, meta = transcribe_bytes(
-        audio_bytes,
-        sample_rate_hz=sample_rate,
-        language="en",
-        beam_size=3,
-        temperature=0.0,
-        vad_filter=False,                  # Cobra already used
-        condition_on_previous_text=False,
-        word_timestamps=False,
-    )
+def handle_utterance(text: str, _meta: Dict[str, Any], phase_timer: PhaseTimer | None = None):
     print(f"STT: {text}")
-    if phase_timer:
-        phase_timer.checkpoint("STT transcription complete")
+    phase_timer.checkpoint(f"STT transcription complete. Sending text to LLM: {text!r}")
     handle_llm(text, phase_timer=phase_timer)
 
 
 def main(device_index: int | None = None):
     idx = DEVICE_INDEX if device_index is None else device_index
-    for audio_bytes, sample_rate, phase_timer in listen_for_utterances(device_index=idx):
-        handle_utterance(audio_bytes, sample_rate, phase_timer)
+    for text, meta, phase_timer in listen_for_utterances(device_index=idx):
+        handle_utterance(text, meta, phase_timer)
 
 
 if __name__ == "__main__":
     main(device_index=DEVICE_INDEX)
-

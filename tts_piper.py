@@ -2,7 +2,8 @@
 # Minimal, Pi-ready Piper TTS that PLAYS audio at 48 kHz stereo via sox+aplay.
 # Requirements: piper binary in PATH, sox, aplay (ALSA). Voice .onnx (+ .onnx.json)
 # Env:
-#   PIPER_MODEL=/path/to/voice.onnx         (required)
+#   PIPER_BIN=/path/to/piper                (optional; auto-detects .venv/bin/piper or PATH)
+#   PIPER_MODEL=/path/to/voice.onnx         (required; defaults to local Lessac medium)
 #   PIPER_CONFIG=/path/to/voice.onnx.json   (optional; auto-detected if alongside)
 #   APLAY_DEVICE=default                    (optional; e.g., "hw:3,0")
 # Usage:
@@ -17,10 +18,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-PIPER_BIN = shutil.which("piper") or "piper"
+PIPER_BIN = shutil.which("piper") or str(Path(__file__).resolve().parent / ".venv" / "bin" / "piper")
 MODEL_PATH = "/home/colden/Projects/Assistant/en_US-lessac-medium.onnx"
 CONFIG_PATH = os.environ.get("PIPER_CONFIG")
-APLAY_DEVICE = "hw:CARD=sndrpihifiberry,DEV=0"
+APLAY_DEVICE = os.environ.get("APLAY_DEVICE", "hw:CARD=sndrpihifiberry,DEV=0")
 
 
 if not MODEL_PATH:

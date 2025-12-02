@@ -1,0 +1,6 @@
+
+
+IMPORTANT: The current state of chunking for STT is poor. Need to carefully look at the github changelog. Primarily, one of the issues is that there is an extra chunk being STTd 
+that adds a whole second of latency. This can be cut down heavily. Additionally, the whole current queue that has been setup with the idea of popping chunks is bad and should
+likely be removed:
+This is wake_listener.py, a lot of broken code.
