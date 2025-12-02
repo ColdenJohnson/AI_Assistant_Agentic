@@ -4,3 +4,14 @@ IMPORTANT: The current state of chunking for STT is poor. Need to carefully look
 that adds a whole second of latency. This can be cut down heavily. Additionally, the whole current queue that has been setup with the idea of popping chunks is bad and should
 likely be removed:
 This is wake_listener.py, a lot of broken code.
+
+Adjust beam size in _chunk_worker()
+
+
+
+
+
+I think these lines of code can be used to judge silence: if silent, then strip and do not put chunk in to the audio processing pipeline: 
+            if prob >= VAD_THRESH:
+                trailing_sil = 0
+                chunk_sil = 0

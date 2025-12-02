@@ -25,9 +25,7 @@ KEYWORD_FILE_PATH = "/home/colden/Projects/Assistant/pax-ton_en_raspberry-pi_v3_
 # VAD Tunables
 VAD_THRESH = 0.5                  # Cobra probability threshold
 CHUNK_SIL_FRAMES = 12             # ~0.38s of silence -> cut a chunk
-TRAIL_SIL_FRAMES = 40             # ~1.3s of silence -> end utterance ( +0.5s from old value)
-PREROLL_MS = 1
-
+TRAIL_SIL_FRAMES = 36             # ~1.2s of silence -> end utterance ( +0.5s from old value)
 
 class PhaseTimer:
     """Simple helper to log latency checkpoints in milliseconds."""
@@ -69,8 +67,8 @@ def peak_dbfs(pcm):
     return 20.0 * math.log10(peak / 32768.0)
 
 
-def output_dBFS(pcm, meter_every, n):
-    lvl = peak_dbfs(pcm)
+# def output_dBFS(pcm, meter_every, n):
+#     lvl = peak_dbfs(pcm)
     # if n % meter_every == 0:
     #     print(f"level ~ {lvl:5.1f} dBFS", flush=True)
 
@@ -84,17 +82,13 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
 
     recorder = PvRecorder(device_index=device_index, frame_length=porcupine.frame_length)
 
-    # derive sizes
-    frame_len = porcupine.frame_length      # e.g., 512
     sr = porcupine.sample_rate              # 16000
-    preroll_frames = max(1, PREROLL_MS * sr // 1000 // frame_len)
 
     # buffers/state
-    preroll = collections.deque(maxlen=preroll_frames)  # holds bytes per frame
-    chunk_audio = bytearray()
-    chunk_results: list[Dict[str, Any]] = []
-    chunk_queue: queue.Queue[bytes | None] | None = None
-    chunk_worker: threading.Thread | None = None
+    chunk_audio = bytearray() # actual audio to be processed
+    chunk_results: list[Dict[str, Any]] = [] # list of text for each speech chunk processed
+    chunk_queue: queue.Queue[bytes | None] | None = None # work queue for each chunk that needs to be processed
+    chunk_worker: threading.Thread | None = None # starts with target as _chunk_worker to process
 
     state = "IDLE"
     trailing_sil = 0              # for utterance end
@@ -115,12 +109,12 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 buf,
                 sample_rate_hz=sr,
                 language="en",
-                beam_size=3,
+                beam_size=3, # TODO: Adjust
                 temperature=0.0,
             )
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             idx += 1
-            print(f"[STT] chunk #{idx} decoded in {elapsed_ms:.1f} ms: {text!r}", flush=True)
+            print(f"[STT] chunk #{idx} decoded in {elapsed_ms:.1f} ms: {text!r}, chunk dur_ms: ", flush=True)
             chunk_results.append(dict(text=text, meta=meta, elapsed_ms=elapsed_ms, duration_ms=dur_ms))
             chunk_queue.task_done()  # type: ignore[union-attr]
 
@@ -139,20 +133,19 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
 
     recorder.start()
     print("listening…")
-    frames_per_sec = max(1, int(porcupine.sample_rate / porcupine.frame_length))  # ~31 @ 16k/512
-    meter_every = frames_per_sec * 5              # ~1 second
-    n = 0
+    # frames_per_sec = max(1, int(porcupine.sample_rate / porcupine.frame_length))  # ~31 @ 16k/512
+    # meter_every = frames_per_sec * 5              # ~1 second
+    # n = 0
 
     while True:
-        pcm = recorder.read()  # list[int], length == frame_len
+        pcm = recorder.read()  # list[int], length == frame_len. These are the audio chunks that are processed
 
-        n += 1
-        output_dBFS(pcm, meter_every, n)
+        # n += 1
+        # output_dBFS(pcm, meter_every, n)
 
         frame = frame_bytes(pcm)
 
         if state == "IDLE":
-            preroll.append(frame)              # pack and keep recent audio
             idx = porcupine.process(pcm)                  # -1 none; 0 => wakeword
             if idx == 0:
                 print("paxton detected, wake")
@@ -160,29 +153,27 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 phase_timer.checkpoint("Wake word detected")
                 chunk_queue = queue.Queue()
                 chunk_results = []
-                chunk_audio = bytearray().join(preroll) if preroll else bytearray()
                 chunk_sil = 0
                 chunk_worker = threading.Thread(target=_chunk_worker, daemon=True)
                 chunk_worker.start()
-                if phase_timer:
-                    phase_timer.checkpoint("Started streaming STT")
+                phase_timer.checkpoint("Started streaming STT")
                 trailing_sil = 0
                 state = "LISTENING"
         else:
             prob = cobra.process(pcm)                     # 0..1 voice probability
             if chunk_queue is not None:
-                chunk_audio.extend(frame)
+                chunk_audio.extend(frame) # if no silence, append to current chunk_audio
             if prob >= VAD_THRESH:
                 trailing_sil = 0
                 chunk_sil = 0
-            else:
+            else: # if silent, either end utterance or send chunk off for STT processing
                 trailing_sil += 1
                 chunk_sil += 1
-                if chunk_sil >= CHUNK_SIL_FRAMES and chunk_queue is not None and chunk_audio:
+                if chunk_sil >= CHUNK_SIL_FRAMES and chunk_queue is not None and chunk_audio: # put into processing queue if enough silence for chunk boundary
                     chunk_queue.put(bytes(chunk_audio))
                     chunk_audio.clear()
                     chunk_sil = 0
-                if trailing_sil >= TRAIL_SIL_FRAMES:
+                if trailing_sil >= TRAIL_SIL_FRAMES: # if enough trailing silence, end utterance
                     print("end utterance")
                     if phase_timer:
                         phase_timer.checkpoint("Utterance captured, finalizing STT")
@@ -202,4 +193,4 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                     chunk_results = []
                     chunk_queue = None
                     chunk_worker = None
-                    preroll.clear()
+
