@@ -24,7 +24,7 @@ KEYWORD_FILE_PATH = "/home/colden/Projects/Assistant/pax-ton_en_raspberry-pi_v3_
 
 # VAD Tunables
 VAD_THRESH = 0.5                  # Cobra probability threshold
-CHUNK_SIL_FRAMES = 12             # ~0.38s of silence -> cut a chunk
+CHUNK_SIL_FRAMES = 6             # ~0.19s of silence -> cut a chunk
 TRAIL_SIL_FRAMES = 36             # ~1.2s of silence -> end utterance ( +0.5s from old value)
 
 class PhaseTimer:
@@ -93,6 +93,7 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
     state = "IDLE"
     trailing_sil = 0              # for utterance end
     chunk_sil = 0                 # for chunk boundary
+    silence_chunked = True       # track whether we've already chunked current silence run
     phase_timer: PhaseTimer | None = None
 
     def _chunk_worker():
@@ -114,7 +115,7 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
             )
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             idx += 1
-            print(f"[STT] chunk #{idx} decoded in {elapsed_ms:.1f} ms: {text!r}, chunk dur_ms: ", flush=True)
+            print(f"[STT] chunk #{idx} decoded in {elapsed_ms:.1f} ms: {text!r}, chunk dur_ms: {dur_ms:.1f}", flush=True)
             chunk_results.append(dict(text=text, meta=meta, elapsed_ms=elapsed_ms, duration_ms=dur_ms))
             chunk_queue.task_done()  # type: ignore[union-attr]
 
@@ -154,6 +155,7 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 chunk_queue = queue.Queue()
                 chunk_results = []
                 chunk_sil = 0
+                silence_chunked = True # we initialize this to True so that if there is quiet after saying the wakeword it will not append
                 chunk_worker = threading.Thread(target=_chunk_worker, daemon=True)
                 chunk_worker.start()
                 phase_timer.checkpoint("Started streaming STT")
@@ -161,18 +163,22 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 state = "LISTENING"
         else:
             prob = cobra.process(pcm)                     # 0..1 voice probability
-            if chunk_queue is not None:
-                chunk_audio.extend(frame) # if no silence, append to current chunk_audio
             if prob >= VAD_THRESH:
                 trailing_sil = 0
                 chunk_sil = 0
+                silence_chunked = False
+                if chunk_queue is not None:
+                    chunk_audio.extend(frame) # if no silence, append to current chunk_audio
             else: # if silent, either end utterance or send chunk off for STT processing
                 trailing_sil += 1
                 chunk_sil += 1
+                if not silence_chunked and chunk_queue is not None:
+                    chunk_audio.extend(frame) # only append first silence run. This should be done to give some trailing silence chunks for whisper to listen to
                 if chunk_sil >= CHUNK_SIL_FRAMES and chunk_queue is not None and chunk_audio: # put into processing queue if enough silence for chunk boundary
                     chunk_queue.put(bytes(chunk_audio))
                     chunk_audio.clear()
                     chunk_sil = 0
+                    silence_chunked = True
                 if trailing_sil >= TRAIL_SIL_FRAMES: # if enough trailing silence, end utterance
                     print("end utterance")
                     if phase_timer:
@@ -189,8 +195,8 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                     phase_timer = None
                     trailing_sil = 0
                     chunk_sil = 0
+                    silence_chunked = True
                     chunk_audio = bytearray()
                     chunk_results = []
                     chunk_queue = None
                     chunk_worker = None
-
