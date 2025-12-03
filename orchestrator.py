@@ -8,6 +8,7 @@ from typing import Any, Dict
 from llm_client_openrouter import stream_chat
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
+import stt_faster_whisper
 
 DEVICE_INDEX = 0
 
@@ -145,6 +146,7 @@ def handle_utterance(text: str, _meta: Dict[str, Any], phase_timer: PhaseTimer |
 
 def main(device_index: int | None = None):
     idx = DEVICE_INDEX if device_index is None else device_index
+    stt_faster_whisper._get_model()  # warm STT model once at startup to avoid first-chunk latency -saves about 900 ms
     for text, meta, phase_timer in listen_for_utterances(device_index=idx):
         handle_utterance(text, meta, phase_timer)
 
