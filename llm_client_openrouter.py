@@ -15,10 +15,20 @@ def _client() -> OpenAI:
     if ttl:
         headers["X-Title"] = ttl
 
+    use_qwen = os.getenv("USE_QWEN", "false").lower() in ("true")
+    if use_qwen:
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        base_url = os.getenv("QWEN_BASE_URL")
+        default_headers = None
+    else:
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        base_url = "https://openrouter.ai/api/v1"
+        default_headers = headers or None
+
     return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        default_headers=headers or None,
+        base_url=base_url,
+        api_key=api_key,
+        default_headers=default_headers,
     )
 
 def stream_chat(
@@ -31,9 +41,11 @@ def stream_chat(
     """
     Yields text deltas as they stream. Final chunk may contain usage info if enabled.
     """
+    use_qwen = os.getenv("USE_QWEN", "false").lower() in ("true")
     client = _client()
     req_kwargs: Dict[str, Any] = {
-        "model": os.getenv("OPENROUTER_MODEL"),
+        "model": os.getenv("QWEN_MODEL", "qwen-flash")
+        if use_qwen else os.getenv("OPENROUTER_MODEL"),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
