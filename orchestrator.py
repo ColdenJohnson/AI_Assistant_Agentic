@@ -13,7 +13,7 @@ import stt_faster_whisper
 DEVICE_INDEX = 0
 
 class StreamingSpeaker:
-    """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
+    """Synthesize and play TTS concurrently: next chunk starts rendering while current plays"""
 
     def __init__(self):
         self._tts = tts_piper
