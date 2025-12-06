@@ -150,7 +150,7 @@ def handle_utterance(text: str, _meta: Dict[str, Any], phase_timer: PhaseTimer |
 def main(device_index: int | None = None):
     idx = DEVICE_INDEX if device_index is None else device_index
     if USE_QWEN_ASR_STT:
-        run_qwen_asr_loop(handle_utterance)
+        run_qwen_asr_loop(handle_utterance, device_index=idx)
     else:
         stt_faster_whisper._get_model()  # warm STT model once at startup to avoid first-chunk latency -saves about 900 ms
         for text, meta, phase_timer in listen_for_utterances(device_index=idx):

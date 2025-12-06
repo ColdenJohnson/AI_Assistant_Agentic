@@ -24,6 +24,7 @@ CHUNK_FRAMES = CHUNK_BYTES // 2
 _pya: pyaudio.PyAudio | None = None
 _mic_stream: pyaudio.Stream | None = None
 _conversation: OmniRealtimeConversation | None = None
+_device_index: int | None = None
 
 HANDLE_UTTERANCE_FN: Callable[[str, Dict[str, Any], PhaseTimer | None], None] = lambda t, m, p: None
 
@@ -53,6 +54,7 @@ class QwenASRCallback(OmniRealtimeCallback):
             channels=CHANNELS,
             rate=SAMPLE_RATE,
             input=True,
+            input_device_index=_device_index,
             frames_per_buffer=CHUNK_FRAMES,
         )
 
@@ -72,9 +74,13 @@ class QwenASRCallback(OmniRealtimeCallback):
             print(f"[DashScope ASR error] {exc}")
 
 
-def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseTimer | None], None]) -> None:
-    global HANDLE_UTTERANCE_FN, _conversation
+def run_qwen_asr_loop(
+    handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseTimer | None], None],
+    device_index: int | None = None,
+) -> None:
+    global HANDLE_UTTERANCE_FN, _conversation, _device_index
     HANDLE_UTTERANCE_FN = handle_utterance_fn
+    _device_index = device_index
 
     dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY", "YOUR_API_KEY")
 
