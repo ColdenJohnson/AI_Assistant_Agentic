@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import atexit
+import os
 import queue
 import threading
 from typing import Any, Dict
 
 from llm_client_openrouter import stream_chat
+from stt_qwen_dashscope import run_qwen_asr_loop
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
 import stt_faster_whisper
 
 DEVICE_INDEX = 0
+USE_QWEN_ASR_STT = os.getenv("USE_QWEN_ASR_STT", "false").lower() == "true"
 
 class StreamingSpeaker:
-    """Synthesize and play TTS concurrently: next chunk starts rendering while current plays"""
+    """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
     def __init__(self):
         self._tts = tts_piper
@@ -146,9 +149,12 @@ def handle_utterance(text: str, _meta: Dict[str, Any], phase_timer: PhaseTimer |
 
 def main(device_index: int | None = None):
     idx = DEVICE_INDEX if device_index is None else device_index
-    stt_faster_whisper._get_model()  # warm STT model once at startup to avoid first-chunk latency -saves about 900 ms
-    for text, meta, phase_timer in listen_for_utterances(device_index=idx):
-        handle_utterance(text, meta, phase_timer)
+    if USE_QWEN_ASR_STT:
+        run_qwen_asr_loop(handle_utterance)
+    else:
+        stt_faster_whisper._get_model()  # warm STT model once at startup to avoid first-chunk latency -saves about 900 ms
+        for text, meta, phase_timer in listen_for_utterances(device_index=idx):
+            handle_utterance(text, meta, phase_timer)
 
 
 if __name__ == "__main__":
