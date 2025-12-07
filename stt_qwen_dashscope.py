@@ -14,7 +14,8 @@ from dashscope.audio.qwen_omni.omni_realtime import TranscriptionParams
 from dotenv import load_dotenv
 from pvrecorder import PvRecorder
 
-from wake_listener import KEYWORD_FILE_PATH, PhaseTimer, TRAIL_SIL_FRAMES, VAD_THRESH, frame_bytes
+from phase_timer import PhaseTimer
+from wake_listener import KEYWORD_FILE_PATH, TRAIL_SIL_FRAMES, VAD_THRESH, frame_bytes
 
 MODEL_ID = "qwen3-asr-flash-realtime"
 MODEL_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
@@ -45,7 +46,7 @@ class QwenASRCallback(OmniRealtimeCallback):
                 meta: Dict[str, Any] = {"backend": MODEL_ID}
                 phase_timer = _active_phase_timer
                 if phase_timer:
-                    phase_timer.checkpoint(f"Qwen ASR transcription complete. Sending text to LLM: {transcript!r}")
+                    phase_timer.checkpoint("final_asr_text_received")
                 HANDLE_UTTERANCE_FN(transcript, meta, phase_timer)
                 _active_phase_timer = None
                 _listen_state = "IDLE"
@@ -131,7 +132,7 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
                 if idx == 0:
                     print("Wake word detected, start listening.")
                     _active_phase_timer = PhaseTimer()
-                    _active_phase_timer.checkpoint("Wake word detected")
+                    _active_phase_timer.checkpoint("wakeword_detected")
                     trailing_sil = 0
                     streaming_audio = False
                     _listen_state = "LISTENING"
@@ -146,7 +147,7 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
             if prob >= VAD_THRESH:
                 trailing_sil = 0
                 if _active_phase_timer and not streaming_audio:
-                    _active_phase_timer.checkpoint("Started streaming STT")
+                    _active_phase_timer.checkpoint("vad_speech_start")
                     streaming_audio = True
                 if _conversation:
                     audio_b64 = base64.b64encode(frame).decode("ascii")

@@ -16,6 +16,7 @@ import pvporcupine
 from dotenv import load_dotenv
 from pvrecorder import PvRecorder
 from stt_faster_whisper import transcribe_bytes
+from phase_timer import PhaseTimer
 
 load_dotenv()
 ACCESS_KEY = os.getenv("PORCUPINE_ACCESS_KEY")
@@ -26,31 +27,6 @@ KEYWORD_FILE_PATH = "/home/colden/Projects/Assistant/pax-ton_en_raspberry-pi_v3_
 VAD_THRESH = 0.5                  # Cobra probability threshold
 CHUNK_SIL_FRAMES = 6             # ~0.19s of silence -> cut a chunk
 TRAIL_SIL_FRAMES = 30             # 36 frames equivalent to ~1.2s of silence -> end utterance ( +0.5s from old value)
-
-class PhaseTimer:
-    """Simple helper to log latency checkpoints in milliseconds."""
-
-    def __init__(self):
-        self._start_ts: float | None = None
-        self._last_ts: float | None = None
-        self._active = True
-
-    def checkpoint(self, label: str):
-        if not self._active:
-            return
-        now = time.perf_counter()
-        if self._start_ts is None:
-            self._start_ts = now
-            delta_ms = 0.0
-            total_ms = 0.0
-        else:
-            delta_ms = (now - self._last_ts) * 1000.0
-            total_ms = (now - self._start_ts) * 1000.0
-        self._last_ts = now
-        print(f"[LATENCY] {label}: +{delta_ms:.1f} ms (total {total_ms:.1f} ms)", flush=True)
-
-    def stop(self):
-        self._active = False
 
 
 def frame_bytes(pcm: list[int]) -> bytes:
@@ -91,6 +67,7 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
     chunk_worker: threading.Thread | None = None # starts with target as _chunk_worker to process
 
     state = "IDLE"
+    speech_started = False
     trailing_sil = 0              # for utterance end
     chunk_sil = 0                 # for chunk boundary
     silence_chunked = True       # track whether we've already chunked current silence run
@@ -151,10 +128,11 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
             if idx == 0:
                 print("paxton detected, wake")
                 phase_timer = PhaseTimer()
-                phase_timer.checkpoint("Wake word detected")
+                phase_timer.checkpoint("wakeword_detected")
                 chunk_queue = queue.Queue()
                 chunk_results = []
                 chunk_sil = 0
+                speech_started = False
                 silence_chunked = True # we initialize this to True so that if there is quiet after saying the wakeword it will not append
                 chunk_worker = threading.Thread(target=_chunk_worker, daemon=True)
                 chunk_worker.start()
@@ -167,6 +145,9 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                 trailing_sil = 0
                 chunk_sil = 0
                 silence_chunked = False
+                if not speech_started and phase_timer:
+                    phase_timer.checkpoint("vad_speech_start")
+                    speech_started = True
                 if chunk_queue is not None:
                     chunk_audio.extend(frame) # if no silence, append to current chunk_audio
             else: # if silent, either end utterance or send chunk off for STT processing
@@ -194,6 +175,7 @@ def listen_for_utterances(device_index: int | None = None) -> Generator[Tuple[st
                     state = "IDLE"
                     phase_timer = None
                     trailing_sil = 0
+                    speech_started = False
                     chunk_sil = 0
                     silence_chunked = True
                     chunk_audio = bytearray()
