@@ -10,16 +10,18 @@ from llm_client_openrouter import stream_chat
 from stt_qwen_dashscope import run_qwen_asr_loop
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
+import tts_qwen_dashscope
 import stt_faster_whisper
 
 DEVICE_INDEX = 0
 USE_QWEN_ASR_STT = os.getenv("USE_QWEN_ASR_STT", "false").lower() == "true"
+USE_QWEN_TTS = os.getenv("USE_QWEN_TTS", "false").lower() == "true"
 
 class StreamingSpeaker:
     """Synthesize and play TTS concurrently: next chunk starts rendering while current plays."""
 
     def __init__(self):
-        self._tts = tts_piper
+        self._tts = tts_qwen_dashscope if USE_QWEN_TTS else tts_piper
         self._text_queue: queue.Queue[str | None] = queue.Queue()
         self._pcm_queue: queue.Queue[bytes | None] = queue.Queue() # pcm stands for pulse control modulation (audio)
         self._stop = threading.Event()
