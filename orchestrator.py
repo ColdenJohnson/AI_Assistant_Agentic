@@ -78,7 +78,7 @@ _speaker = StreamingSpeaker()
 ''' Sends the actual call to teh LLM and streams back the response'''
 def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     msgs = [
-        {"role": "system", "content": "You are a home assistant. Be concise."},
+        {"role": "system", "content": "You are a home assistant. Be concise."}, # TODO: Much better prompt, pass in a prompt file
         {"role": "user", "content": text},
     ]
 
@@ -96,6 +96,8 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     MIN_CHARS = 40            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
 
+    # TODO: update flush_sentence to be more immediate. Due to new STT, can now immediately add to queue as things come in.
+    # TODO: Stream text TTS instead of 1 sentence at a time (make sure that it's working as a stream instead of otherwise)
     def flush_sentence(force: bool = False):
         nonlocal started_stream, chunk_counter, first_chunk_logged
         chunk = "".join(sentence).strip()
@@ -116,6 +118,7 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
                 started_stream = True
 
     for token in stream_chat(msgs, usage=False):
+        print("LLM token:", flush=True)
         print(token, end="", flush=True)
         if phase_timer and not first_token_logged:
             phase_timer.checkpoint("Received first LLM token")
