@@ -118,27 +118,28 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
                 started_stream = True
 
     for token in stream_chat(msgs, usage=False):
-        print("LLM token:", flush=True)
+        print("\nLLM token:", flush=True)
         print(token, end="", flush=True)
         if phase_timer and not first_token_logged:
             phase_timer.checkpoint("Received first LLM token")
             first_token_logged = True
-        resp.append(token)
+        resp.append(token) # TODO: This will become important for tool calls, as the entire response will be needed to call a tool
         sentence.append(token)
         current_len = len("".join(sentence))
         punct = any(token.endswith(p) for p in (".", "!", "?", "\n"))
         whitespace = token.endswith(" ")
 
-        if not started_stream:
-            if punct or (whitespace and current_len >= MIN_FIRST_CHARS) or (whitespace and current_len >= MAX_FIRST_CHARS):
-                flush_sentence(force=True)
-        else:
-            if punct and current_len >= MIN_FIRST_CHARS:
-                flush_sentence(force=True)
-            elif whitespace and current_len >= MIN_CHARS:
-                flush_sentence(force=True)
-            elif current_len >= MAX_CHARS:
-                flush_sentence(force=True)
+        flush_sentence(force=True) # READ NOTE: This currently immediately flushes every token as it comes in. This is intended for qwen3-realtime-TTS to handle it better as a single stream (not as chunks)
+        # if not started_stream:
+        #     if punct or (whitespace and current_len >= MIN_FIRST_CHARS) or (whitespace and current_len >= MAX_FIRST_CHARS):
+        #         flush_sentence(force=True)
+        # else:
+        #     if punct and current_len >= MIN_FIRST_CHARS:
+        #         flush_sentence(force=True)
+        #     elif whitespace and current_len >= MIN_CHARS:
+        #         flush_sentence(force=True)
+        #     elif current_len >= MAX_CHARS:
+        #         flush_sentence(force=True)
     print()
     flush_sentence(force=True)
     _speaker.wait_until_idle()
