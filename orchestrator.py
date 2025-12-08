@@ -4,13 +4,14 @@ import atexit
 import os
 import queue
 import threading
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from llm_client_openrouter import stream_chat
 from stt_qwen_dashscope import run_qwen_asr_loop
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
 import tts_qwen_dashscope
+from tts_qwen_dashscope import QwenStreamingTtsSession
 import stt_faster_whisper
 
 DEVICE_INDEX = 0
@@ -95,11 +96,12 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     MAX_FIRST_CHARS = 1
     MIN_CHARS = 1            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
+    tts_session: Optional[QwenStreamingTtsSession] = None
 
     # TODO: update flush_sentence to be more immediate. Due to new STT, can now immediately add to queue as things come in.
     # TODO: Stream text TTS instead of 1 sentence at a time (make sure that it's working as a stream instead of otherwise)
     def flush_sentence(force: bool = False):
-        nonlocal started_stream, chunk_counter, first_chunk_logged
+        nonlocal started_stream, chunk_counter, first_chunk_logged, tts_session
         chunk = "".join(sentence).strip()
         if not chunk:
             return
@@ -107,7 +109,12 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
             chunk_counter += 1
             label = "first" if chunk_counter == 1 else "next"
             phase_timer.checkpoint(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
-            _speaker.speak(chunk)
+            if USE_QWEN_TTS:
+                if tts_session is None:
+                    tts_session = QwenStreamingTtsSession()
+                tts_session.append_text(chunk)
+            else:
+                _speaker.speak(chunk)
             if phase_timer:
                 msg = "First TTS chunk queued" if chunk_counter == 1 and not first_chunk_logged else f"TTS chunk #{chunk_counter} queued"
                 phase_timer.checkpoint(msg)
@@ -142,6 +149,9 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         #         flush_sentence(force=True)
     print()
     flush_sentence(force=True)
+    if tts_session is not None:
+        tts_session.finish()
+        tts_session = None
     _speaker.wait_until_idle()
     if phase_timer:
         phase_timer.stop()

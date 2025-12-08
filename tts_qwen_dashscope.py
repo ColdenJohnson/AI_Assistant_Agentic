@@ -121,29 +121,52 @@ def _init_api_key():
     dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY", "YOUR_API_KEY")
 
 
+class QwenStreamingTtsSession:
+    def __init__(self, voice: str = "Cherry"):
+        _init_api_key()
+        self._callback = QwenTtsCallback()
+        self._client = QwenTtsRealtime(
+            model=MODEL_ID,
+            callback=self._callback,
+            url=MODEL_URL,
+        )
+        self._client.connect()
+        self._client.update_session(
+            voice=voice,
+            response_format=AudioFormat.PCM_24000HZ_MONO_16BIT,
+            mode="server_commit",
+        )
+
+    def append_text(self, text: str) -> None:
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        self._client.append_text(cleaned)
+
+    def finish(self) -> bytes:
+        self._client.finish()
+        self._callback.wait_for_finished()
+        return self._callback.buffer()
+
+    def close(self):
+        try:
+            self._client.close()
+        except Exception:
+            pass
+
+
 def _synthesize_raw(text: str) -> bytes:
     """Mirror Piper API: return PCM bytes; playback occurs during streaming."""
     cleaned = text.strip()
     if not cleaned:
         return b""
 
-    _init_api_key()
-    callback = QwenTtsCallback()
-    client = QwenTtsRealtime(
-        model=MODEL_ID,
-        callback=callback,
-        url=MODEL_URL,
-    )
-    client.connect()
-    client.update_session(
-        voice="Cherry",
-        response_format=AudioFormat.PCM_24000HZ_MONO_16BIT,
-        mode="server_commit",
-    )
-    client.append_text(cleaned)
-    client.finish()
-    callback.wait_for_finished()
-    return callback.buffer()
+    session = QwenStreamingTtsSession()
+    try:
+        session.append_text(cleaned)
+        return session.finish()
+    finally:
+        session.close()
 
 
 def _play_pcm_resampled(raw_pcm: bytes, src_sr: int):
