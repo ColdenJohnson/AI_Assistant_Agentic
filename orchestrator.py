@@ -93,7 +93,7 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     chunk_counter = 0
     MIN_FIRST_CHARS = 1      # say first words quickly
     MAX_FIRST_CHARS = 1
-    MIN_CHARS = 40            # afterwards keep sentences longer
+    MIN_CHARS = 1            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
 
     # TODO: update flush_sentence to be more immediate. Due to new STT, can now immediately add to queue as things come in.
@@ -103,10 +103,10 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
         chunk = "".join(sentence).strip()
         if not chunk:
             return
-        if force or chunk[-1:] in (".", "!", "?", "\n"):
+        if force or chunk[-1:] in (".", "!", "?", "\n"): # TODO: sentences are still being flushed in chunks: should be flushed smaller than taht? I believe the queue can handle just appending words to it dierctly as they become available (verify)
             chunk_counter += 1
             label = "first" if chunk_counter == 1 else "next"
-            print(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
+            phase_timer.checkpoint(f"\n[LLM->TTS] sending {label} chunk #{chunk_counter}: {chunk!r}")
             _speaker.speak(chunk)
             if phase_timer:
                 msg = "First TTS chunk queued" if chunk_counter == 1 and not first_chunk_logged else f"TTS chunk #{chunk_counter} queued"
