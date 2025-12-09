@@ -12,12 +12,20 @@ from dashscope.audio.qwen_tts_realtime import (
     QwenTtsRealtime,
     QwenTtsRealtimeCallback,
 )
+from dotenv import load_dotenv
+from pathlib import Path
 
 import tts_piper
 
 MODEL_ID = "qwen3-tts-flash-realtime"
 MODEL_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 SRC_SR = 24000  # PCM_24000HZ_MONO_16BIT
+
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
+_DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+if not _DASHSCOPE_API_KEY:
+    raise RuntimeError("DASHSCOPE_API_KEY is missing; populate it in .env or export it.")
 
 
 class _StreamingPlayer:
@@ -118,7 +126,7 @@ class QwenTtsCallback(QwenTtsRealtimeCallback):
 
 
 def _init_api_key():
-    dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY", "YOUR_API_KEY")
+    dashscope.api_key = _DASHSCOPE_API_KEY
 
 
 class QwenStreamingTtsSession:

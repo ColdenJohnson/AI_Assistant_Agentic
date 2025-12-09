@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
+from dotenv import load_dotenv
 from langchain.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_qwq import ChatQwen
 
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
+
 _DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+
+if not _DASHSCOPE_API_KEY:
+    raise RuntimeError("DASHSCOPE_API_KEY is not set; check your environment or .env file.")
 
 _llm = ChatQwen(
     model="qwen-flash",

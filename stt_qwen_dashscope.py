@@ -4,6 +4,7 @@ import base64
 import os
 import signal
 import sys
+from pathlib import Path
 from typing import Any, Callable, Dict
 
 import dashscope
@@ -22,8 +23,13 @@ SAMPLE_RATE = 16000
 CHANNELS = 1
 VAD_DURATION_MS = 800
 
-load_dotenv()
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
 ACCESS_KEY = os.getenv("PORCUPINE_ACCESS_KEY")
+_DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+if not _DASHSCOPE_API_KEY:
+    raise RuntimeError("DASHSCOPE_API_KEY is missing; populate it in .env or export it.")
+dashscope.api_key = _DASHSCOPE_API_KEY
 
 HANDLE_UTTERANCE_FN: Callable[[str, Dict[str, Any], PhaseTimer | None], None] = lambda t, m, p: None
 _conversation: OmniRealtimeConversation | None = None
@@ -81,7 +87,7 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
     global HANDLE_UTTERANCE_FN, _conversation, _listen_state, _active_phase_timer
     HANDLE_UTTERANCE_FN = handle_utterance_fn
 
-    dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY", "YOUR_API_KEY")
+    dashscope.api_key = _DASHSCOPE_API_KEY
 
     porcupine = pvporcupine.create(access_key=ACCESS_KEY, keyword_paths=[KEYWORD_FILE_PATH])
     recorder = PvRecorder(frame_length=porcupine.frame_length)
