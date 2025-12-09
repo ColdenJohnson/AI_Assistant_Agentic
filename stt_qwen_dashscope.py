@@ -7,7 +7,6 @@ import sys
 from typing import Any, Callable, Dict
 
 import dashscope
-import pvcobra
 import pvporcupine
 from dashscope.audio.qwen_omni import MultiModality, OmniRealtimeCallback, OmniRealtimeConversation
 from dashscope.audio.qwen_omni.omni_realtime import TranscriptionParams
@@ -15,7 +14,7 @@ from dotenv import load_dotenv
 from pvrecorder import PvRecorder
 
 from phase_timer import PhaseTimer
-from wake_listener import KEYWORD_FILE_PATH, TRAIL_SIL_FRAMES, VAD_THRESH, frame_bytes
+from wake_listener import KEYWORD_FILE_PATH, frame_bytes
 
 MODEL_ID = "qwen3-asr-flash-realtime"
 MODEL_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
@@ -55,7 +54,7 @@ class QwenASRCallback(OmniRealtimeCallback):
             print(f"[DashScope ASR error] {exc}", flush=True)
 
 
-def _cleanup(recorder: PvRecorder | None, cobra: pvcobra.Cobra | None, porcupine: pvporcupine.Porcupine | None):
+def _cleanup(recorder: PvRecorder | None, porcupine: pvporcupine.Porcupine | None):
     try:
         if _conversation:
             _conversation.close()
@@ -72,11 +71,6 @@ def _cleanup(recorder: PvRecorder | None, cobra: pvcobra.Cobra | None, porcupine
     except Exception:
         pass
     try:
-        if cobra:
-            cobra.delete()
-    except Exception:
-        pass
-    try:
         if porcupine:
             porcupine.delete()
     except Exception:
@@ -90,11 +84,10 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
     dashscope.api_key = os.environ.get("DASHSCOPE_API_KEY", "YOUR_API_KEY")
 
     porcupine = pvporcupine.create(access_key=ACCESS_KEY, keyword_paths=[KEYWORD_FILE_PATH])
-    cobra = pvcobra.create(access_key=ACCESS_KEY)
     recorder = PvRecorder(frame_length=porcupine.frame_length)
 
     def _handle_exit(sig, frame):
-        _cleanup(recorder, cobra, porcupine)
+        _cleanup(recorder, porcupine)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, _handle_exit)
@@ -116,65 +109,41 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
     _conversation.update_session(
         output_modalities=[MultiModality.TEXT],
         enable_input_audio_transcription=True,
+        enable_turn_detection=True,
+        turn_detection_type="server_vad",
         transcription_params=transcription_params,
     )
 
     recorder.start()
     print("Listening for wake word and streaming to DashScope... Press Ctrl+C to stop.")
 
-    trailing_sil = 0
     streaming_audio = False
     try:
         while True:
             pcm = recorder.read()
 
             if _listen_state == "IDLE":
+                streaming_audio = False
                 idx = porcupine.process(pcm)
                 if idx == 0:
                     print("Wake word detected, start listening.")
                     _active_phase_timer = PhaseTimer()
                     _active_phase_timer.checkpoint("wakeword_detected")
-                    trailing_sil = 0
                     streaming_audio = False
                     _listen_state = "LISTENING"
                 continue
 
-            if _listen_state == "WAITING":
+            if _listen_state != "LISTENING":
+                streaming_audio = False
                 continue
 
-            prob = cobra.process(pcm)
+            if not streaming_audio and _active_phase_timer:
+                _active_phase_timer.checkpoint("vad_speech_start")
+            streaming_audio = True
+
             frame = frame_bytes(pcm)
-
-            if prob >= VAD_THRESH:
-                trailing_sil = 0
-                if _active_phase_timer and not streaming_audio:
-                    _active_phase_timer.checkpoint("vad_speech_start")
-                    streaming_audio = True
-                if _conversation:
-                    audio_b64 = base64.b64encode(frame).decode("ascii")
-                    _conversation.append_audio(audio_b64)
-            else:
-                trailing_sil += 1
-                if not streaming_audio and trailing_sil >= TRAIL_SIL_FRAMES:
-                    # Wake word fired but no speech followed; reset to idle.
-                    _listen_state = "IDLE"
-                    trailing_sil = 0
-                    if _active_phase_timer:
-                        _active_phase_timer.stop()
-                        _active_phase_timer = None
-                    continue
-
-                if streaming_audio and _conversation:
-                    audio_b64 = base64.b64encode(frame).decode("ascii")
-                    if trailing_sil <= TRAIL_SIL_FRAMES:
-                        _conversation.append_audio(audio_b64)
-                    if trailing_sil >= TRAIL_SIL_FRAMES:
-                        print("End of speech detected.")
-                        _conversation.commit() # This is needed, or else if audio stops sending too soon the server will never detect end of utterance, and will hang indefinitely. Also allows for turning off server vad 
-                        if _active_phase_timer:
-                            _active_phase_timer.checkpoint("Utterance captured, awaiting transcription")
-                        streaming_audio = False
-                        trailing_sil = 0
-                        _listen_state = "WAITING"
+            if _conversation:
+                audio_b64 = base64.b64encode(frame).decode("ascii")
+                _conversation.append_audio(audio_b64)
     finally:
-        _cleanup(recorder, cobra, porcupine)
+        _cleanup(recorder, porcupine)
