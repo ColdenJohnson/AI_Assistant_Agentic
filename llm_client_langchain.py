@@ -1,28 +1,34 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
 from dotenv import load_dotenv
 from langchain.tools import tool
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_qwq import ChatQwen
 
-_ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=_ENV_PATH, override=True)
+# Mirror llm_client_openrouter.py environment loading to pick up Qwen settings.
+load_dotenv()
 
+_QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-flash")
 _DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+_QWEN_BASE_URL = os.getenv("QWEN_BASE_URL")
 
 if not _DASHSCOPE_API_KEY:
-    raise RuntimeError("DASHSCOPE_API_KEY is not set; check your environment or .env file.")
+    raise RuntimeError("DASHSCOPE_API_KEY is not set; check your environment variables.")
 
-_llm = ChatQwen(
-    model="qwen-flash",
-    max_tokens=1024,
-    timeout=None,
-    max_retries=2,
-)
+_llm_kwargs: Dict[str, Any] = {
+    "model": _QWEN_MODEL,
+    "max_tokens": 1024,
+    "timeout": None,
+    "max_retries": 2,
+    "api_key": _DASHSCOPE_API_KEY,
+}
+if _QWEN_BASE_URL:
+    _llm_kwargs["base_url"] = _QWEN_BASE_URL
+
+_llm = ChatQwen(**_llm_kwargs)
 
 
 @tool
