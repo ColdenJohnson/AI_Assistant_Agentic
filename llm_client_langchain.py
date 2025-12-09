@@ -26,14 +26,14 @@ _llm_kwargs: Dict[str, Any] = {
     "api_key": _DASHSCOPE_API_KEY,
 }
 if _QWEN_BASE_URL:
-    _llm_kwargs["base_url"] = _QWEN_BASE_URL
+    _llm_kwargs["base_url"] = _QWEN_BASE_URL # This is critical, as otherwise it defaults to something non China (gives eror Incorrect API key provided)
 
 _llm = ChatQwen(**_llm_kwargs)
 
 
 @tool
 def secret_number() -> int:
-    """Return the secret number 31."""
+    """Return the secret number."""
     return 31
 
 
