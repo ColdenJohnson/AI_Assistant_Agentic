@@ -20,6 +20,7 @@ MODEL_ID = "qwen3-asr-flash-realtime"
 MODEL_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 SAMPLE_RATE = 16000
 CHANNELS = 1
+VAD_DURATION_MS = 800
 
 load_dotenv()
 ACCESS_KEY = os.getenv("PORCUPINE_ACCESS_KEY")
@@ -39,7 +40,6 @@ class QwenASRCallback(OmniRealtimeCallback):
 
     def on_event(self, response: dict) -> None:
         global _active_phase_timer, _listen_state
-        print(f"Omni realtime callback: {response.get("transcript")}", flush=True)
         try:
             if response.get("type") == "conversation.item.input_audio_transcription.completed":
                 transcript = response.get("transcript", "")
@@ -112,6 +112,7 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
         enable_turn_detection=True,
         turn_detection_type="server_vad",
         transcription_params=transcription_params,
+        turn_detection_silence_duration_ms=VAD_DURATION_MS
     )
 
     recorder.start()
