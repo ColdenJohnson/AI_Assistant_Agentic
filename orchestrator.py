@@ -6,7 +6,7 @@ import queue
 import threading
 from typing import Any, Dict, Optional
 
-from llm_client_openrouter import stream_chat
+from llm_client_langchain import stream_chat
 from stt_qwen_dashscope import run_qwen_asr_loop
 from wake_listener import PhaseTimer, listen_for_utterances
 import tts_piper
