@@ -25,8 +25,8 @@ KEYWORD_FILE_PATH = "/home/colden/Projects/Assistant/pax-ton_en_raspberry-pi_v3_
 
 # VAD Tunables
 VAD_THRESH = 0.5                  # Cobra probability threshold
-CHUNK_SIL_FRAMES = 6             # ~0.19s of silence -> cut a chunk
-TRAIL_SIL_FRAMES = 30             # 36 frames equivalent to ~1.2s of silence -> end utterance ( +0.5s from old value)
+CHUNK_SIL_FRAMES = 3             # ~0.19s of silence -> cut a chunk
+TRAIL_SIL_FRAMES = 10             # 36 frames equivalent to ~1.2s of silence -> end utterance ( +0.5s from old value)
 
 
 def frame_bytes(pcm: list[int]) -> bytes:

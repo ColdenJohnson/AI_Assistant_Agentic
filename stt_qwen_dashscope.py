@@ -40,6 +40,7 @@ class QwenASRCallback(OmniRealtimeCallback):
 
     def on_event(self, response: dict) -> None:
         global _active_phase_timer, _listen_state
+        print(f"Omni realtime callback: {response.get("transcript")}", flush=True)
         try:
             if response.get("type") == "conversation.item.input_audio_transcription.completed":
                 transcript = response.get("transcript", "")
@@ -169,6 +170,7 @@ def run_qwen_asr_loop(handle_utterance_fn: Callable[[str, Dict[str, Any], PhaseT
                         _conversation.append_audio(audio_b64)
                     if trailing_sil >= TRAIL_SIL_FRAMES:
                         print("End of speech detected.")
+                        _conversation.commit() # This is needed, or else if audio stops sending too soon the server will never detect end of utterance, and will hang indefinitely. Also allows for turning off server vad 
                         if _active_phase_timer:
                             _active_phase_timer.checkpoint("Utterance captured, awaiting transcription")
                         streaming_audio = False
