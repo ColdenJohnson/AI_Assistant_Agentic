@@ -1,5 +1,3 @@
-# AI_Assistant_Agentic
-
 # Raspberry Pi AI Voice Assistant
 
 Always-on, wake-word voice assistant running on Raspberry Pi, with switchable **local vs. cloud** Speech-to-Text (STT), Text-to-Speech (TTS), and LLM backend. Designed to be usable even with unreliable networks and behind the Great Firewall (China-compatible), even without VPN. Highly customizable tooling capabilities, to give your personal assistant access to anything you want!
@@ -34,10 +32,9 @@ All of this is implemented and working end-to-end: you can say the wake word, ta
 
 ## Architecture Diagram
 
-### Diagram
 ![AI Assistant Architecture](https://raw.githubusercontent.com/ColdenJohnson/Drawio_Diagrams/main/AIAssistantArchitecture.png)
 
-### End-to-End Flow
+### Diagram Explanation
 
 1. Custom **Wake word** (“Paxton”) is detected by Picovoice **Porcupine**. This can be swapped out by downloading your own picovoice file and replacing the local one (pax-ton_en_raspberry-pi_v3_0_0.ppn).
 2. Once awake, **Cobra VAD** (Voice Activity Detection) decides when you are speaking and when you’ve stopped.
@@ -59,46 +56,23 @@ All of this is implemented and working end-to-end: you can say the wake word, ta
 
 | Component | Example Used | Role |
 |----------|--------------|------|
-| Single-board computer | Raspberry Pi (tested on Pi 5) | Runs wake-word, STT, LLM client, and TTS pipeline. |
+| Raspberry pi | Pi 5 | Runs all processing and networking. |
 | Microphone | USB mic | Captures user speech for Porcupine / VAD / STT. |
-| DAC + Speaker | USB / HAT DAC + powered speaker | Plays assistant responses with low noise and stable volume. |
-| Storage | microSD / SSD | Holds OS, Python environment, models (Whisper, Piper, etc.). |
-| Network | Ethernet or Wi-Fi | Used for cloud STT/TTS/LLM (Qwen, OpenRouter) when enabled. |
-
-### Software Pipeline
-
-| Stage | Local Option | Cloud Option | Main Files |
-|-------|--------------|-------------|-----------|
-| Wake Word + VAD | Picovoice Porcupine + Cobra | N/A (always local) | `wake_listener.py`, Porcupine `.ppn` model |
-| STT | `faster-whisper` | Qwen ASR (DashScope realtime) | `stt_faster_whisper.py`, `stt_qwen_dashscope.py` |
-| LLM | Qwen3 via DashScope / OpenRouter | Same, but can route via OpenRouter | `llm_client_langchain.py`, `llm_client_openrouter.py` |
-| TTS | Piper | Qwen TTS (DashScope realtime) | `tts_piper.py`, `tts_qwen_dashscope.py` |
-| Orchestration | — | — | `orchestrator.py`, `wake_listener.py`, `phase_timer.py` |
-
-The central brain of the system is `orchestrator.py`. It wires everything together:
-
-- Chooses **local vs cloud STT/TTS** based on environment variables.
-- Streams LLM tokens into TTS so speech starts quickly.
-- Logs timing checkpoints using `PhaseTimer` for latency debugging.
+| DAC + Speaker | HAT DAC + powered speaker | Plays assistant responses. |
+| Network | Ethernet or Wi-Fi | Used for cloud STT/TTS/LLM when enabled. |
 
 ### File Roles
 
 | File | Purpose |
 |------|---------|
-| `orchestrator.py` | Entry point. Connects wake-word → VAD → STT → LLM → TTS; manages streaming TTS via `StreamingSpeaker`. |
-| `wake_listener.py` | Listens for the wake word using Porcupine and segments speech using Cobra VAD; yields full utterances. |
-| `stt_faster_whisper.py` | Local STT using `faster-whisper` (tiny model, quantized) to transcribe VAD-delimited chunks. |
-| `stt_qwen_dashscope.py` | Cloud STT via Qwen realtime ASR with server-side VAD; feeds transcripts back to `orchestrator`. |
-| `tts_piper.py` | Local TTS using Piper; plays PCM via `sox` + `aplay`. |
-| `tts_qwen_dashscope.py` | Streaming Qwen TTS client; exposes `QwenStreamingTtsSession` used by `orchestrator`. |
-| `llm_client_langchain.py` | Qwen LLM client using LangChain. Supports streaming tokens and basic tool calling. |
-| `llm_client_openrouter.py` | OpenRouter/OpenAI-compatible streaming client; can also hit DashScope’s OpenAI-style endpoint when `USE_QWEN=true`. |
-| `phase_timer.py` | Tiny helper to log checkpoints and measure latency through the pipeline. |
-| `test.py` | Offline harness: routes a WAV file through the same wake-word + STT path for debugging. |
-| `pvrecorderavailabledevices.py` | Lists available audio input devices (helpful when configuring the Pi). |
-| `see_open_router_models.py` | Quick hack script to inspect available models on OpenRouter. Contains API key → treat with caution. |
-| `backlog_note.txt` | Notes on latency issues, STT chunking, and tuning ideas. |
-| `*.onnx`, `*.ppn`, `*.wav` | Model assets (Piper voice, Porcupine wake-word), and example audio files. |
+| `orchestrator.py` | Main file. Connects wake-word → VAD → STT → LLM → TTS; manages connections and decision points. |
+| `wake_listener.py` | Listens for the wake word using Porcupine and chunks speech using Cobra VAD. |
+| `stt_faster_whisper.py` | Local STT using `faster-whisper` (small local model) to transcribe chunks (chunk streaming, not 'true streaming'). |
+| `stt_qwen_dashscope.py` | Cloud STT with Qwen realtime ASR with server-side VAD; yields full transcripts back to `orchestrator`. |
+| `tts_piper.py` | Local TTS using Piper (small local model). |
+| `tts_qwen_dashscope.py` | Streaming Qwen TTS client. |
+| `llm_client_langchain.py` | Qwen LLM client using LangChain. Supports tool calling and streaming. |
+| `llm_client_openrouter.py` | OpenRouter/OpenAI-compatible streaming client; also uses DashScope when `USE_QWEN=true` (Beijing server, lower latency in China). |
 
 ---
 
@@ -142,8 +116,10 @@ This project currently already has basic LangChain support, and is structurally 
 To create a new tool, simply do the following:
 
 - Write a small Python function (ex: `def foo(): ...)`
--Add an `@tool` decorator describing the function (name and input type)
--Add it to the tool list passed to the LLM client
+
+- Add an `@tool` decorator describing the function (name and input type)
+
+- Add it to the tool list passed to the LLM client
 
 The AI assistant will immediately have access to this new tool, and will dynamically call it when logically useful to solve problems.
 
@@ -155,12 +131,8 @@ The AI assistant will immediately have access to this new tool, and will dynamic
 |------|---------|
 | **STT (Speech-to-Text)** | Converting spoken audio into written text. Implemented with **Whisper (faster-whisper)** locally and **Qwen ASR** in the cloud. |
 | **TTS (Text-to-Speech)** | Converting written text into spoken audio. Implemented with **Piper** locally and **Qwen TTS** in the cloud. |
-| **LLM (Large Language Model)** | The “brain” that understands your text and generates replies (here: **Qwen3** via DashScope / OpenRouter). |
-| **Wake Word** | A specific phrase that “wakes up” the assistant (e.g., “Pax-ton”), handled by **Porcupine**. |
-| **VAD (Voice Activity Detection)** | Algorithm that detects when the user is actually speaking vs. background silence; here: **Cobra VAD**. |
-| **Latency** | The delay between you finishing a sentence and hearing the assistant start speaking back. |
-| **Pi** | Short for **Raspberry Pi**, the small, low-power computer running all of this. |
-
+| **Wake Word** | A specific phrase that “wakes up” the assistant (ex: "Paxton"), handled by **Porcupine**. |
+| **VAD (Voice Activity Detection)** | Algorithm that detects when the user is actually speaking vs. background silence; **Cobra VAD**. |
 
 
 
