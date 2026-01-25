@@ -21,7 +21,7 @@ from pathlib import Path
 PIPER_BIN = shutil.which("piper") or str(Path(__file__).resolve().parent / ".venv" / "bin" / "piper")
 MODEL_PATH = "/home/colden/Projects/Assistant/en_US-lessac-medium.onnx"
 CONFIG_PATH = os.environ.get("PIPER_CONFIG")
-APLAY_DEVICE = os.environ.get("APLAY_DEVICE", "hw:CARD=sndrpihifiberry,DEV=0")
+APLAY_DEVICE = os.environ.get("APLAY_DEVICE", "hw:CARD=BossDAC,DEV=0")
 
 
 if not MODEL_PATH:

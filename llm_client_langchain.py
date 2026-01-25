@@ -37,8 +37,13 @@ def secret_number() -> int:
     """Return the secret number."""
     return 31
 
+@tool
+def secret_phrase(stra) -> str:
+    """get a secret phrase after passing in a particular string"""
+    return "fuck shit up " + stra
 
-_llm_with_tools = _llm.bind_tools([secret_number])
+
+_llm_with_tools = _llm.bind_tools([secret_number, secret_phrase])
 
 _HISTORY: List[Any] | None = None
 
@@ -111,6 +116,7 @@ def _stream_qwen_with_tools(user_text: str) -> Iterator[str]:
 
     # Step 2: first pass – let the model decide on any tool calls
     ai_msg = _llm_with_tools.invoke(_HISTORY)
+    print(f"invoking _llm_with_tools got ai_msg: {ai_msg}")
     _HISTORY.append(ai_msg)
 
     tool_calls = getattr(ai_msg, "tool_calls", None) or []
@@ -118,6 +124,8 @@ def _stream_qwen_with_tools(user_text: str) -> Iterator[str]:
         name = tool_call.get("name")
         call_id = tool_call.get("id")
         args = tool_call.get("args") or {}
+        print(tool_call)
+        print(f"tool_call name: {name}, call_id: {call_id}, args: {args}", flush = True)
 
         if name == "secret_number":
             result = secret_number.invoke(args)
@@ -127,6 +135,15 @@ def _stream_qwen_with_tools(user_text: str) -> Iterator[str]:
                     tool_call_id=call_id,
                 )
             )
+        if name == "secret_phrase":
+            result = secret_phrase.invoke(args)
+            _HISTORY.append(
+                ToolMessage(
+                    content=str(result),
+                    tool_call_id=call_id,
+                )
+            )
+
 
     # Step 3: second pass – stream the final answer
     full_chunk = None
