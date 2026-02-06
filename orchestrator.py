@@ -93,8 +93,8 @@ def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     first_token_logged = False
     chunk_counter = 0
     MIN_FIRST_CHARS = 1      # say first words quickly
-    MAX_FIRST_CHARS = 1
-    MIN_CHARS = 1            # afterwards keep sentences longer
+    MAX_FIRST_CHARS = 10
+    MIN_CHARS = 15            # afterwards keep sentences longer
     MAX_CHARS = 160           # hard stop to avoid huge chunks
     tts_session: Optional[QwenStreamingTtsSession] = None
 
