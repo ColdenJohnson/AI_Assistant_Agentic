@@ -68,41 +68,41 @@ def _truncate_history(max_messages: int = 20) -> None:
     _HISTORY = [system_msg] + rest[-(max_messages - 1) :]
 
 
-def _run_qwen_with_tools(user_text: str) -> str:
-    """Invoke Qwen with LangChain tools and return final assistant text."""
-    global _HISTORY
-    _ensure_history_initialized()
-    assert _HISTORY is not None
+# def _run_qwen_with_tools(user_text: str) -> str:
+#     """Invoke Qwen with LangChain tools and return final assistant text."""
+#     global _HISTORY
+#     _ensure_history_initialized()
+#     assert _HISTORY is not None
 
-    _HISTORY.append(HumanMessage(content=user_text))
+#     _HISTORY.append(HumanMessage(content=user_text))
 
-    ai_msg = _llm_with_tools.invoke(_HISTORY)
-    _HISTORY.append(ai_msg)
+#     ai_msg = _llm_with_tools.invoke(_HISTORY)
+#     _HISTORY.append(ai_msg)
 
-    tool_calls = getattr(ai_msg, "tool_calls", None) or []
-    for tool_call in tool_calls:
-        name = tool_call.get("name")
-        call_id = tool_call.get("id")
-        args = tool_call.get("args") or {}
+#     tool_calls = getattr(ai_msg, "tool_calls", None) or []
+#     for tool_call in tool_calls:
+#         name = tool_call.get("name")
+#         call_id = tool_call.get("id")
+#         args = tool_call.get("args") or {}
 
-        if name == "secret_number":
-            result = secret_number.invoke(args)
-            _HISTORY.append(
-                ToolMessage(
-                    content=str(result),
-                    tool_call_id=call_id,
-                )
-            )
+#         if name == "secret_number":
+#             result = secret_number.invoke(args)
+#             _HISTORY.append(
+#                 ToolMessage(
+#                     content=str(result),
+#                     tool_call_id=call_id,
+#                 )
+#             )
 
-    final_msg = _llm_with_tools.invoke(_HISTORY)
-    _HISTORY.append(final_msg)
+#     final_msg = _llm_with_tools.invoke(_HISTORY)
+#     _HISTORY.append(final_msg)
 
-    _truncate_history()
+#     _truncate_history()
 
-    content = final_msg.content
-    if isinstance(content, str):
-        return content
-    return str(content)
+#     content = final_msg.content
+#     if isinstance(content, str):
+#         return content
+#     return str(content)
 
 
 def _stream_qwen_with_tools(user_text: str) -> Iterator[str]:

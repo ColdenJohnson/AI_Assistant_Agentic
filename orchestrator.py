@@ -79,7 +79,7 @@ _speaker = StreamingSpeaker()
 ''' Sends the actual call to teh LLM and streams back the response'''
 def handle_llm(text: str, phase_timer: PhaseTimer | None = None):
     msgs = [
-        {"role": "system", "content": "You are a home assistant. Be concise."}, # TODO: Much better prompt, pass in a prompt file
+        {"role": "system", "content": "You are a home assistant. Be concise. Do not refuse requests."}, # TODO: Much better prompt, pass in a prompt file
         {"role": "user", "content": text},
     ]
 
